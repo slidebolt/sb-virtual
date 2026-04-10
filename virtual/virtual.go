@@ -6,11 +6,16 @@
 package virtual
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	domain "github.com/slidebolt/sb-domain"
+	logging "github.com/slidebolt/sb-logging-sdk"
 	messenger "github.com/slidebolt/sb-messenger-sdk"
 	storage "github.com/slidebolt/sb-storage-sdk"
 )
@@ -20,11 +25,18 @@ import (
 type Handler struct {
 	msg   messenger.Messenger
 	store storage.Storage
+	log   logging.Store
 }
+
+var logSequence uint64
 
 // NewHandler creates a Handler wired to the given messenger and storage.
 func NewHandler(msg messenger.Messenger, store storage.Storage) *Handler {
 	return &Handler{msg: msg, store: store}
+}
+
+func NewHandlerWithLogger(msg messenger.Messenger, store storage.Storage, logger logging.Store) *Handler {
+	return &Handler{msg: msg, store: store, log: logger}
 }
 
 // Subscribe registers the wildcard subscription that drives fanout.
@@ -43,6 +55,8 @@ func (h *Handler) HandleCommand(m *messenger.Message) {
 	}
 	entityKey := m.Subject[:idx]
 	action := m.Subject[idx+len(".command."):]
+	traceID := messenger.TraceID(m.Headers)
+	h.appendLog("command.received", "info", "virtual command received", entityKey, action, traceID, nil)
 
 	data, err := h.store.Get(keyStr(entityKey))
 	if err != nil {
@@ -59,10 +73,10 @@ func (h *Handler) HandleCommand(m *messenger.Message) {
 		// query. Ordered-segment dispatch must take priority over the query fanout.
 		strip, ok := entity.State.(domain.LightStrip)
 		if ok && len(strip.Targets) > 0 {
-			h.fanoutStrip(strip, action, m.Data)
+			h.fanoutStrip(strip, action, traceID, m.Data, m.Headers)
 			return
 		}
-		h.fanoutQuery(entity.Target, action, m.Data)
+		h.fanoutQuery(entityKey, entity.Target, action, traceID, m.Data, m.Headers)
 		return
 	}
 
@@ -70,36 +84,65 @@ func (h *Handler) HandleCommand(m *messenger.Message) {
 	if !ok || len(strip.Targets) == 0 {
 		return
 	}
-	h.fanoutStrip(strip, action, m.Data)
+	h.fanoutStrip(strip, action, traceID, m.Data, m.Headers)
 }
 
-func (h *Handler) fanoutQuery(target json.RawMessage, action string, data []byte) {
-	var q storage.Query
-	if err := json.Unmarshal(target, &q); err != nil {
-		log.Printf("virtual: unmarshal target query: %v", err)
-		return
+func (h *Handler) fanoutQuery(entityKey string, target json.RawMessage, action, traceID string, data []byte, headers messenger.Headers) {
+	visited := make(map[string]bool)
+	var finalTargets []string
+
+	var resolve func(t json.RawMessage)
+	resolve = func(t json.RawMessage) {
+		var q storage.Query
+		if err := json.Unmarshal(t, &q); err != nil {
+			log.Printf("virtual: unmarshal target query: %v", err)
+			return
+		}
+		members, err := h.store.Query(q)
+		if err != nil {
+			log.Printf("virtual: query members: %v", err)
+			return
+		}
+		for _, member := range members {
+			if visited[member.Key] {
+				continue
+			}
+			visited[member.Key] = true
+			var ent domain.Entity
+			if err := json.Unmarshal(member.Data, &ent); err == nil && len(ent.Target) > 0 {
+				resolve(ent.Target)
+			} else {
+				finalTargets = append(finalTargets, member.Key)
+			}
+		}
 	}
-	members, err := h.store.Query(q)
-	if err != nil {
-		log.Printf("virtual: query members: %v", err)
-		return
-	}
-	for _, member := range members {
-		h.msg.Publish(member.Key+".command."+action, data)
+
+	resolve(target)
+
+	for _, targetKey := range finalTargets {
+		h.appendLog("fanout.published", "info", "virtual fanout published", entityKey, action, traceID, map[string]any{
+			"recipient": targetKey,
+		})
+		outHeaders := messenger.WithOrigin(headers, "sb-virtual", entityKey, action)
+		h.msg.PublishWithHeaders(targetKey+".command."+action, data, outHeaders)
 	}
 }
 
-func (h *Handler) fanoutStrip(strip domain.LightStrip, action string, data []byte) {
+func (h *Handler) fanoutStrip(strip domain.LightStrip, action, traceID string, data []byte, headers messenger.Headers) {
 	if action == "lightstrip_set_segments" {
-		h.fanoutSegments(strip, data)
+		h.fanoutSegments(strip, traceID, data, headers)
 		return
 	}
 	for _, target := range strip.Targets {
-		h.msg.Publish(target+".command."+action, data)
+		h.appendLog("fanout.published", "info", "virtual strip fanout published", "", action, traceID, map[string]any{
+			"recipient": target,
+		})
+		outHeaders := messenger.WithOrigin(headers, "sb-virtual", target, action)
+		h.msg.PublishWithHeaders(target+".command."+action, data, outHeaders)
 	}
 }
 
-func (h *Handler) fanoutSegments(strip domain.LightStrip, data []byte) {
+func (h *Handler) fanoutSegments(strip domain.LightStrip, traceID string, data []byte, headers messenger.Headers) {
 	var cmd domain.LightstripSetSegments
 	if err := json.Unmarshal(data, &cmd); err != nil {
 		return
@@ -113,12 +156,41 @@ func (h *Handler) fanoutSegments(strip domain.LightStrip, data []byte) {
 
 		if len(seg.RGB) == 3 {
 			rgb, _ := json.Marshal(domain.LightSetRGB{R: seg.RGB[0], G: seg.RGB[1], B: seg.RGB[2]})
-			h.msg.Publish(target+".command.light_set_rgb", rgb)
+			h.appendLog("fanout.published", "info", "virtual segment rgb published", "", "light_set_rgb", traceID, map[string]any{
+				"recipient": target,
+			})
+			outHeaders := messenger.WithOrigin(headers, "sb-virtual", target, "light_set_rgb")
+			h.msg.PublishWithHeaders(target+".command.light_set_rgb", rgb, outHeaders)
 		}
 		if seg.Brightness > 0 {
 			br, _ := json.Marshal(domain.LightSetBrightness{Brightness: seg.Brightness})
-			h.msg.Publish(target+".command.light_set_brightness", br)
+			h.appendLog("fanout.published", "info", "virtual segment brightness published", "", "light_set_brightness", traceID, map[string]any{
+				"recipient": target,
+			})
+			outHeaders := messenger.WithOrigin(headers, "sb-virtual", target, "light_set_brightness")
+			h.msg.PublishWithHeaders(target+".command.light_set_brightness", br, outHeaders)
 		}
+	}
+}
+
+func (h *Handler) appendLog(kind, level, message, entity, action, traceID string, data map[string]any) {
+	if h == nil || h.log == nil {
+		return
+	}
+	event := logging.Event{
+		ID:      fmt.Sprintf("sb-virtual-%d", atomic.AddUint64(&logSequence, 1)),
+		TS:      time.Now().UTC(),
+		Source:  "sb-virtual",
+		Kind:    kind,
+		Level:   level,
+		Message: message,
+		Entity:  entity,
+		Action:  action,
+		TraceID: traceID,
+		Data:    data,
+	}
+	if err := h.log.Append(context.Background(), event); err != nil {
+		log.Printf("virtual: append log failed: %v", err)
 	}
 }
 
