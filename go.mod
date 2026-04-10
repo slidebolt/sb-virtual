@@ -3,14 +3,14 @@ module github.com/slidebolt/sb-virtual
 go 1.26.1
 
 require (
-	github.com/slidebolt/sb-contract v1.0.4
-	github.com/slidebolt/sb-domain v1.0.4
-	github.com/slidebolt/sb-logging v1.0.0
-	github.com/slidebolt/sb-logging-sdk v1.0.0
-	github.com/slidebolt/sb-messenger-sdk v1.0.4
-	github.com/slidebolt/sb-runtime v1.0.4
-	github.com/slidebolt/sb-storage-sdk v1.0.4
-	github.com/slidebolt/sb-storage-server v1.0.4
+	github.com/slidebolt/sb-contract v1.0.5
+	github.com/slidebolt/sb-domain v1.0.5
+	github.com/slidebolt/sb-logging v1.0.2
+	github.com/slidebolt/sb-logging-sdk v1.0.1
+	github.com/slidebolt/sb-messenger-sdk v1.0.6
+	github.com/slidebolt/sb-runtime v1.0.5
+	github.com/slidebolt/sb-storage-sdk v1.0.5
+	github.com/slidebolt/sb-storage-server v1.0.6
 )
 
 require (
@@ -35,11 +35,14 @@ require (
 	github.com/blevesearch/zapx/v14 v14.4.2 // indirect
 	github.com/blevesearch/zapx/v15 v15.4.2 // indirect
 	github.com/blevesearch/zapx/v16 v16.2.8 // indirect
+	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/go-tpm v0.9.8 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.18.4 // indirect
+	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/minio/highwayhash v1.0.4-0.20251030100505-070ab1a87a76 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
@@ -49,11 +52,17 @@ require (
 	github.com/nats-io/nats.go v1.49.0 // indirect
 	github.com/nats-io/nkeys v0.4.15 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
+	github.com/ncruces/go-strftime v1.0.0 // indirect
+	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	go.etcd.io/bbolt v1.4.0 // indirect
 	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
+	modernc.org/libc v1.70.0 // indirect
+	modernc.org/mathutil v1.7.1 // indirect
+	modernc.org/memory v1.11.0 // indirect
+	modernc.org/sqlite v1.48.2 // indirect
 )
 
 replace github.com/slidebolt/sb-logging-sdk => ../sb-logging-sdk
