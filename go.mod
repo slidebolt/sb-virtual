@@ -3,12 +3,14 @@ module github.com/slidebolt/sb-virtual
 go 1.26.1
 
 require (
-	github.com/slidebolt/sb-contract v1.0.2
-	github.com/slidebolt/sb-domain v1.0.2
-	github.com/slidebolt/sb-messenger-sdk v1.0.2
-	github.com/slidebolt/sb-runtime v1.0.2
-	github.com/slidebolt/sb-storage-sdk v1.0.2
-	github.com/slidebolt/sb-storage-server v1.0.2
+	github.com/slidebolt/sb-contract v1.0.4
+	github.com/slidebolt/sb-domain v1.0.4
+	github.com/slidebolt/sb-logging v1.0.0
+	github.com/slidebolt/sb-logging-sdk v1.0.0
+	github.com/slidebolt/sb-messenger-sdk v1.0.4
+	github.com/slidebolt/sb-runtime v1.0.4
+	github.com/slidebolt/sb-storage-sdk v1.0.4
+	github.com/slidebolt/sb-storage-server v1.0.4
 )
 
 require (
@@ -53,3 +55,5 @@ require (
 	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
+
+replace github.com/slidebolt/sb-logging-sdk => ../sb-logging-sdk
