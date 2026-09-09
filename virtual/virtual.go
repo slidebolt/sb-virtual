@@ -89,7 +89,7 @@ func (h *Handler) HandleCommand(m *messenger.Message) {
 
 func (h *Handler) fanoutQuery(entityKey string, target json.RawMessage, action, traceID string, data []byte, headers messenger.Headers) {
 	visited := make(map[string]bool)
-	var finalTargets []string
+	var finalTargets []resolvedTarget
 
 	var resolve func(t json.RawMessage)
 	resolve = func(t json.RawMessage) {
@@ -112,20 +112,56 @@ func (h *Handler) fanoutQuery(entityKey string, target json.RawMessage, action, 
 			if err := json.Unmarshal(member.Data, &ent); err == nil && len(ent.Target) > 0 {
 				resolve(ent.Target)
 			} else {
-				finalTargets = append(finalTargets, member.Key)
+				finalTargets = append(finalTargets, resolvedTarget{
+					key:       member.Key,
+					entity:    ent,
+					hasEntity: ent.Key() == member.Key,
+				})
 			}
 		}
 	}
 
 	resolve(target)
 
-	for _, targetKey := range finalTargets {
+	for _, target := range finalTargets {
+		if isColorAction(action) && (!target.hasEntity || !entitySupportsAction(target.entity, action)) {
+			log.Printf("virtual: fanout skip unsupported action=%s group=%s recipient=%s", action, entityKey, target.key)
+			h.appendLog("fanout.skipped", "info", "virtual fanout skipped unsupported command", entityKey, action, traceID, map[string]any{
+				"recipient": target.key,
+				"reason":    "unsupported_command",
+			})
+			continue
+		}
 		h.appendLog("fanout.published", "info", "virtual fanout published", entityKey, action, traceID, map[string]any{
-			"recipient": targetKey,
+			"recipient": target.key,
 		})
 		outHeaders := messenger.WithOrigin(headers, "sb-virtual", entityKey, action)
-		h.msg.PublishWithHeaders(targetKey+".command."+action, data, outHeaders)
+		h.msg.PublishWithHeaders(target.key+".command."+action, data, outHeaders)
 	}
+}
+
+type resolvedTarget struct {
+	key       string
+	entity    domain.Entity
+	hasEntity bool
+}
+
+func isColorAction(action string) bool {
+	switch action {
+	case "light_set_rgb", "light_set_hs", "light_set_xy", "light_set_rgbw", "light_set_rgbww":
+		return true
+	default:
+		return false
+	}
+}
+
+func entitySupportsAction(entity domain.Entity, action string) bool {
+	for _, cmd := range entity.Commands {
+		if cmd == action {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *Handler) fanoutStrip(strip domain.LightStrip, action, traceID string, data []byte, headers messenger.Headers) {

@@ -162,6 +162,44 @@ func TestFanoutTargetQuery(t *testing.T) {
 	}
 }
 
+func TestFanoutTargetQuery_ColorActionSkipsUnsupportedMembers(t *testing.T) {
+	env := setup(t)
+
+	saveEntity(t, env.store, domain.Entity{
+		ID: "color", Plugin: "wiz", DeviceID: "room", Type: "light", Name: "Color Bulb",
+		Commands: []string{"light_turn_on", "light_turn_off", "light_set_brightness", "light_set_color_temp", "light_set_hs"},
+		State:    domain.Light{Power: true, Brightness: 200},
+	})
+	saveEntity(t, env.store, domain.Entity{
+		ID: "edison", Plugin: "wiz", DeviceID: "room", Type: "light", Name: "Edison Bulb",
+		Commands: []string{"light_turn_on", "light_turn_off", "light_set_brightness", "light_set_color_temp"},
+		State:    domain.Light{Power: true, Brightness: 200},
+	})
+	saveEntity(t, env.store, domain.Entity{
+		ID: "all-lights", Plugin: "virtual", DeviceID: "room", Type: "light", Name: "All Lights",
+		Target: json.RawMessage(`{"pattern":"wiz.room.*","where":[{"field":"type","op":"eq","value":"light"}]}`),
+		State:  domain.Light{},
+	})
+
+	cap := collectMessages(t, env.msg, "wiz.room.*.command.>")
+	env.msg.Publish("virtual.room.all-lights.command.light_set_hs", []byte(`{"hue":240,"saturation":100,"brightness":127}`))
+
+	msgs := cap.wait(1, 2*time.Second)
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 color fan-out command, got %d", len(msgs))
+	}
+	if msgs[0].Subject != "wiz.room.color.command.light_set_hs" {
+		t.Fatalf("subject = %q, want color bulb only", msgs[0].Subject)
+	}
+	var hs domain.LightSetHS
+	if err := json.Unmarshal(msgs[0].Data, &hs); err != nil {
+		t.Fatalf("unmarshal hs: %v", err)
+	}
+	if hs.Hue != 240 || hs.Saturation != 100 || hs.Brightness != 127 {
+		t.Fatalf("hs = %+v, want hue=240 saturation=100 brightness=127", hs)
+	}
+}
+
 func TestFanoutLightstripSetSegments(t *testing.T) {
 	env := setup(t)
 
