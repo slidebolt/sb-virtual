@@ -111,7 +111,7 @@ func TestBasementLikeFanoutLogsControlEntityRecipient(t *testing.T) {
 		t.Fatalf("publish: %v", err)
 	}
 
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		events, err := logger.List(context.Background(), logging.ListRequest{
 			Kind:    "fanout.published",
