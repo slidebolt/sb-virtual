@@ -27,6 +27,7 @@ func (a *App) Hello() contract.HelloResponse {
 		Kind:            contract.KindService,
 		ContractVersion: contract.ContractVersion,
 		DependsOn:       []string{"messenger", "storage"},
+		Setup:           contract.RequiredSetup("Core"),
 	}
 }
 
